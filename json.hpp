@@ -162,9 +162,10 @@ public:
 	template<typename T>
 	const T& get() const requires isAnyOf<T, Ts...> {
 		using namespace std::string_literals;
-		if (find_type<T>() != type)
+		E tType = find_type<T>();
+		if (tType != type)
 			throw std::invalid_argument(
-				"wrong type T: "s + std::to_string((int)find_type<T>()) +
+				"wrong type T: "s + std::to_string((int)tType) +
 				" type: "s +  std::to_string((int)type)
 			);
 		if constexpr (sizeof(T) > sizeof(void*)) {
@@ -176,8 +177,12 @@ public:
 
 	template<typename T>
 	T& get() requires isAnyOf<T, Ts...> {
-		if (find_type<T>() != type)
-			throw std::invalid_argument("wrong type");
+		E tType = find_type<T>();
+		if (tType!= type)
+			throw std::invalid_argument(
+				"wrong type T: "s + std::to_string((int)tType) +
+				" type: "s +  std::to_string((int)type)
+			);
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			return *(T*)data;
 		} else {
@@ -193,8 +198,12 @@ public:
 	 */
 	template<typename T>
 	smartUnion copy() const requires isAnyOf<T, Ts...> {
-		if (find_type<T>() != type)
-			throw std::invalid_argument("Wrong type");
+		E tType = find_type<T>();
+		if (tType != type)
+			throw std::invalid_argument(
+				"wrong type T: "s + std::to_string((int)tType) +
+				" type: "s +  std::to_string((int)type)
+			);
 		return smartUnion(std::move(T(get<T>())));
 	}
 };
@@ -354,7 +363,6 @@ private:
 				throw parsingError(txt, index);
 			}
 		}
-		std::cout << "parsed a string: " << data << std::endl;
 		return json(std::move(data));
 	}
 
@@ -384,8 +392,6 @@ private:
 			for (++index; index < txt.length() && txt[index] != '\"'; index++) {
 				name += txt[index];
 			}
-
-			std::cout << "found identifier: " << name << std::endl;
 
 			skipSpaces(txt, index);
 			skipSpaces(txt, index);

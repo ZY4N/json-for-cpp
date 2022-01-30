@@ -1,2 +1,2 @@
 # json-for-cpp
-A basic C++ json implementation 
+A basic json implementation for C++. (work in progress)
