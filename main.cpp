@@ -10,5 +10,5 @@ int main() {
 	const double d = data["test"]["number"];
 	const bool b = data["boolean"];
 
-    std::cout << s << " " << d << " " << b << data["boolean"].size() << std::endl;
+    std::cout << s << " " << d << " " << b << std::endl;
 }
