@@ -7,8 +7,6 @@
 #include <stdexcept>
 #include <string.h>
 
-// taken from 'https://github.com/Neargye/magic_enum'
-
 #if defined(__clang__) && __clang_major__ >= 5 || defined(__GNUC__) && __GNUC__ >= 9 || defined(_MSC_VER) && _MSC_VER >= 1920
 #  undef  ENUM_NAMES_SUPPORT
 #  define ENUM_NAMES_SUPPORT 1
