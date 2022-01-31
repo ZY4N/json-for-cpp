@@ -44,7 +44,6 @@ class smartUnion {
 private:
 	uint64_t data;
 
-
 	template <typename T>
 	static constexpr size_t find_index() {
 		constexpr bool matches[sizeof...(Ts)]{
@@ -79,7 +78,8 @@ private:
 		constexpr std::string_view names[]{
 			type_to_string<E, Ts>()...
 		};
-		return ((size_t)v) < sizeof...(Ts) ? std::string(names[((size_t)v) - 1]) : "unknown";
+		const size_t idx = ((size_t)v) - 1;
+		return idx < sizeof...(Ts) ? std::string(names[idx]) : "unknown";
 	}
 
 	static constexpr bool using_pointer(E t) {
