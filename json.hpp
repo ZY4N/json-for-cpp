@@ -537,8 +537,7 @@ public:
 	}
 
 	json& operator=(json&& otherJSON) {
-		//data = std::move(otherJSON.data);
-		data.operator=((json_data&&)otherJSON.data);
+		data = std::move(otherJSON.data);
 		return *this;
 	}
 	
