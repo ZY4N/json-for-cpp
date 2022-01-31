@@ -79,7 +79,7 @@ private:
 			type_to_string<E, Ts>()...
 		};
 		const size_t idx = ((size_t)v) - 1;
-		return t == NULL_TYPE ? "null" : idx < sizeof...(Ts) ? std::string(names[idx]) : "unknown";
+		return v == NULL_TYPE ? "null" : idx < sizeof...(Ts) ? std::string(names[idx]) : "unknown";
 	}
 
 	static constexpr bool using_pointer(E t) {
