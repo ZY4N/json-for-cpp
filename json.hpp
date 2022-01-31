@@ -7,17 +7,38 @@
 #include <stdexcept>
 #include <string.h>
 
+// taken from 'https://github.com/Neargye/magic_enum'
+
+#if defined(__clang__) && __clang_major__ >= 5 || defined(__GNUC__) && __GNUC__ >= 9 || defined(_MSC_VER) && _MSC_VER >= 1920
+#  undef  ENUM_NAMES_SUPPORT
+#  define ENUM_NAMES_SUPPORT 1
+#endif
+
+template <typename E, E V>
+constexpr auto enum_to_string() noexcept {
+	static_assert(std::is_enum<E>::value, "Parameter has to be an enum");
+
+	constexpr auto extractName = [](const std::string_view& s) {
+		auto it = s.end(); 
+		while (*it != ':') it--;
+		return std::string_view(++it, s.end());
+	};
+
+#if defined(ENUM_NAMES_SUPPORT) && ENUM_NAMES_SUPPORT
+#  if defined(__clang__) || defined(__GNUC__)
+	constexpr auto name = extractName({__PRETTY_FUNCTION__, sizeof(__PRETTY_FUNCTION__) - 2});
+#  elif defined(_MSC_VER)
+	constexpr auto name = extractName({__FUNCSIG__, sizeof(__FUNCSIG__) - 17});
+#  endif
+	return name;
+#else
+	return std::string_view{ std::to_string_view((int)V) };
+#endif
+}
 
 template<typename T, typename... Ts>
 concept isAnyOf = (std::same_as<T, Ts> || ...);
 
-/**
- * @brief a union that keeps track of its dynamic type and manages its own data
- * 
- * @tparam E 			an enum for the types  
- * @tparam NULL_TYPE 	the enum tape for 'null' or 'undefined' 
- * @tparam Ts 			the dynamic types
- */
 template<typename E, E NULL_TYPE, typename... Ts>
 class smartUnion {
 	static_assert(std::is_enum<E>::value, "Must be an enum type");
@@ -25,15 +46,10 @@ class smartUnion {
 private:
 	uint64_t data;
 
-	/**
-	 * @brief finds the index of a type in the unions type parameter list 
-	 * 
-	 * @tparam T 				the type to be mapped
-	 * @return constexpr size_t the index
-	 */
+
 	template <typename T>
 	static constexpr size_t find_index() {
-		const constexpr bool matches[sizeof...(Ts)]{
+		constexpr bool matches[sizeof...(Ts)]{
 			std::is_same<T, Ts>::value...
 		};
 		size_t index = -1;
@@ -49,22 +65,29 @@ private:
 	}
 
 	template<typename T>
-	static E find_type() {
+	static constexpr E find_enum_type() {
 		const constexpr size_t idx = find_index<T>();
 		static_assert(idx != -1, "use of unknown type");
 		static_assert(idx != -2, "use of ambiguous type");
 		return (E) (idx + 1);
 	}
 
-	/**
-	 * @brief determines whether an object is stored on the heap or locally
-	 * 
-	 * @param t 		The enum of a certain type
-	 * @return true 	corresponding type is to big for local storage
-	 * @return false 	corresponding type fits in local storage
-	 */
+	template<typename ENUM, typename T>
+	static constexpr std::string_view type_to_string() {
+		return enum_to_string<ENUM, find_enum_type<T>()>();
+	};
+
+	std::string enum_type_to_string(E v) const noexcept {
+		constexpr std::string_view names[]{
+			type_to_string<E, Ts>()...
+		};
+		return ((size_t)v) < sizeof...(Ts) ? std::string(names[((size_t)v) - 1]) : "unknown";
+	}
+
 	static constexpr bool using_pointer(E t) {
-		constexpr bool use_pointer[sizeof...(Ts)]{ (sizeof(Ts) > sizeof(void*))... };
+		constexpr bool use_pointer[sizeof...(Ts)]{
+			(sizeof(Ts) > sizeof(void*))...
+		};
 		return t == NULL_TYPE ? false : use_pointer[((size_t)t) - 1];
 	}
 
@@ -75,7 +98,7 @@ public:
 
 	template<typename T>
 	smartUnion(const T& t) requires isAnyOf<T, Ts...> {
-		type = find_type<T>();
+		type = find_enum_type<T>();
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			data = (uint64_t) new T(t);
 		} else {
@@ -85,7 +108,7 @@ public:
 
 	template<typename T>
 	smartUnion(T&& t) requires isAnyOf<T, Ts...> {
-		type = find_type<T>();
+		type = find_enum_type<T>();
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			data = (uint64_t) new T(std::move(t));
 		} else {
@@ -108,10 +131,9 @@ public:
 		}
 	}
 
-
 	template<typename T>
 	smartUnion<E, NULL_TYPE, Ts...>& operator=(const T& t) requires isAnyOf<T, Ts...> {
-		E newType = find_type<T>();
+		E newType = find_enum_type<T>();
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			if (newType == type) {
 				((T*)data)->operator=(t);
@@ -131,7 +153,7 @@ public:
 
 	template<typename T>
 	smartUnion<E, NULL_TYPE, Ts...>& operator=(T&& t) requires isAnyOf<T, Ts...> {
-		E newType = find_type<T>();
+		E newType = find_enum_type<T>();
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			if (newType == type) {
 				((T*)data)->operator=(t);
@@ -161,13 +183,14 @@ public:
 
 	template<typename T>
 	const T& get() const requires isAnyOf<T, Ts...> {
-		using namespace std::string_literals;
-		E tType = find_type<T>();
-		if (tType != type)
-			throw std::invalid_argument(
-				"wrong type T: "s + std::to_string((int)tType) +
-				" type: "s +  std::to_string((int)type)
-			);
+		E tType = find_enum_type<T>();
+		if (tType != type) {
+			std::string message("Tried to access ");
+			message += enum_type_to_string(tType);
+			message += " but dynamic type was ";
+			message += enum_type_to_string(type);
+			throw std::invalid_argument(message);
+		}
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			return *(T*)data;
 		} else {
@@ -177,12 +200,14 @@ public:
 
 	template<typename T>
 	T& get() requires isAnyOf<T, Ts...> {
-		E tType = find_type<T>();
-		if (tType!= type)
-			throw std::invalid_argument(
-				"wrong type T: "s + std::to_string((int)tType) +
-				" type: "s +  std::to_string((int)type)
-			);
+		E tType = find_enum_type<T>();
+		if (tType!= type) {
+			std::string message("Tried to access ");
+			message += enum_type_to_string(tType);
+			message += " but dynamic type was ";
+			message += enum_type_to_string(type);
+			throw std::invalid_argument(message);
+		}
 		if constexpr (sizeof(T) > sizeof(void*)) {
 			return *(T*)data;
 		} else {
@@ -190,30 +215,22 @@ public:
 		}
 	}
 
-	/**
-	 * @brief Creates a copy with the help of 
-	 * 
-	 * @tparam T 			a type correspnding to the enum value 
-	 * @return smartUnion 	a copy of this {@link smartUnion}
-	 */
 	template<typename T>
 	smartUnion copy() const requires isAnyOf<T, Ts...> {
-		E tType = find_type<T>();
-		if (tType != type)
-			throw std::invalid_argument(
-				"wrong type T: "s + std::to_string((int)tType) +
-				" type: "s +  std::to_string((int)type)
-			);
+		E tType = find_enum_type<T>();
+		if (tType != type) {
+			std::string message("Tried to access ");
+			message += enum_type_to_string(tType);
+			message += " but dynamic type was ";
+			message += enum_type_to_string(type);
+			throw std::invalid_argument(message);
+		}
 		return smartUnion(std::move(T(get<T>())));
 	}
 };
 
 class json;
 
-/**
- * @brief typedefs of data types to make implementation more flexible and expressive
- * 
- */
 typedef bool Boolean;
 typedef double Number;
 typedef std::string String;
@@ -405,16 +422,6 @@ private:
 		return json(std::move(data));
 	}
 
-	//----------------------[ errors ]---------------------//
-	
-	const std::runtime_error castError(const json_type t) const {
-		using std::operator""s;
-		return std::runtime_error(
-			"Tried to cast json value of type '"s + typeToString(data.type) + 
-			 "' to '"s + typeToString(t) + '\''
-		);
-	}
-
 	static const std::runtime_error parsingError(const std::string& txt, const size_t index) {
 		using std::operator""s;
 		return std::runtime_error(
@@ -427,23 +434,11 @@ public:
 	//----------------------[ accesors ]---------------------//
 
 	const json& operator[](const size_t index) const {
-		using std::operator""s;
-		if (data.type == json_type::array) {
-			size_t length = data.get<Array>().size();
-			if (index < length) {
-				return data.get<Array>()[index];
-			} else throw std::out_of_range("index: "s + std::to_string(index) + " length: "s + std::to_string(length));
-		} else throw castError(json_type::array);
+		return data.get<Array>()[index];
 	}
 
 	json& operator[](const size_t index) {
-		using std::operator""s;
-		if (data.type == json_type::array) {
-			size_t length = data.get<Array>().size();
-			if (index < length) {
-				return data.get<Array>()[index];
-			} else throw std::out_of_range("index: "s + std::to_string(index) + " length: "s + std::to_string(length));
-		} else throw castError(json_type::array);
+		return data.get<Array>()[index];
 	}
 
 
@@ -455,19 +450,18 @@ public:
 
 	json_type getType() const { return data.type; };
 
-	size_t size() {
+	size_t size() const {
 		switch (data.type) {
 			using enum json_type;
 			case array:		return data.get<Array>().size();
 			case object:	return data.get<Object>().size();
-			default: throw castError(json_type::array);
+			default: data.get<Array>(); // throws access error
 		}
+		return 0;
 	}
 
-	size_t length() {
-		if (data.type == json_type::string)
-			return data.get<String>().length();
-		else throw castError(json_type::string);
+	size_t length() const {
+		return data.get<String>().length();
 	}
 
 	//----------------------[ to_string ]---------------------//
@@ -570,4 +564,3 @@ std::ostream& operator<<(std::ostream& os, const json& json) {
 	json.to_string(os, 0);
 	return os;
 }
-
